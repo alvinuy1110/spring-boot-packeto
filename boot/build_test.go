@@ -50,6 +50,8 @@ func testBuild(t *testing.T, context spec.G, it spec.S) {
 
 		Expect(os.MkdirAll(filepath.Join(ctx.Application.Path, "META-INF"), 0755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(ctx.Application.Path, "META-INF", "native-image"), 0755)).To(Succeed())
+	    Expect(os.MkdirAll(filepath.Join(ctx.Application.Path, "BOOT-INF"), 0755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(ctx.Application.Path, "BOOT-INF", "lib"), 0755)).To(Succeed())
 
 		ctx.Buildpack.Metadata = map[string]interface{}{
 			"dependencies": []map[string]interface{}{
@@ -344,6 +346,112 @@ Spring-Boot-Lib: BOOT-INF/lib
 
 	})
 
+	context("set BP_SPRING_CLOUD_BINDINGS_DISABLED to false and has spring-cloud-bindings lib", func() {
+
+	    var CopySpringCloudBindingJar = func(path string) {
+	    //Read all the contents of the  original file
+            bytesRead, err := ioutil.ReadFile(filepath.Join("testdata", "723126712c0b22a7fe409664adf1fbb78cf3040e313a82c06696f5058e190534", "stub-spring-cloud-bindings.jar"))
+            Expect(err).NotTo(HaveOccurred())
+
+            //Copy all the contents to the desitination file
+            err = ioutil.WriteFile(filepath.Join(path, "spring-cloud-bindings-1.0.0.jar"), bytesRead, 0755)
+            Expect(err).NotTo(HaveOccurred())
+	    }
+
+		it.Before(func() {
+			Expect(os.Setenv("BP_SPRING_CLOUD_BINDINGS_DISABLED", "false")).To(Succeed())
+		})
+
+		it.After(func() {
+			Expect(os.Unsetenv(("BP_SPRING_CLOUD_BINDINGS_DISABLED"))).To(Succeed())
+		})
+
+        it("contributes to the result for API 0.7+", func() {
+        	Expect(ioutil.WriteFile(filepath.Join(ctx.Application.Path, "META-INF", "MANIFEST.MF"), []byte(`
+Spring-Boot-Version: 1.1.1
+Spring-Boot-Classes: BOOT-INF/classes
+Spring-Boot-Lib: BOOT-INF/lib
+`), 0644)).To(Succeed())
+
+			CopySpringCloudBindingJar(filepath.Join(ctx.Application.Path, "BOOT-INF","lib"))
+
+            ctx.Buildpack.API = "0.7"
+            ctx.Buildpack.Metadata = map[string]interface{}{
+                "dependencies": []map[string]interface{}{
+
+                    {
+                        "id":      "spring-cloud-bindings",
+                        "version": "1.1.0",
+                        "stacks":  []interface{}{"test-stack-id"},
+                        "cpes":    []string{"cpe:2.3:a:vmware:spring_cloud_bindings:1.8.0:*:*:*:*:*:*:*"},
+                        "purl":    "pkg:generic/springframework/spring-cloud-bindings@1.8.0",
+                    },
+                },
+            }
+
+            result, err := build.Build(ctx)
+            Expect(err).NotTo(HaveOccurred())
+
+            Expect(result.Layers).To(HaveLen(1))
+            Expect(result.Layers[0].Name()).To(Equal("web-application-type"))
+
+            Expect(result.BOM.Entries).To(HaveLen(1))
+            Expect(result.BOM.Entries[0].Name).To(Equal("dependencies"))
+        })
+
+	})
+
+    context("set BP_SPRING_CLOUD_BINDINGS_DISABLED to false and has no spring-cloud-bindings lib", func() {
+
+		it.Before(func() {
+			Expect(os.Setenv("BP_SPRING_CLOUD_BINDINGS_DISABLED", "false")).To(Succeed())
+		})
+
+		it.After(func() {
+			Expect(os.Unsetenv(("BP_SPRING_CLOUD_BINDINGS_DISABLED"))).To(Succeed())
+		})
+
+        it("contributes to the result for API 0.7+", func() {
+        			Expect(ioutil.WriteFile(filepath.Join(ctx.Application.Path, "META-INF", "MANIFEST.MF"), []byte(`
+Spring-Boot-Version: 1.1.1
+Spring-Boot-Classes: BOOT-INF/classes
+Spring-Boot-Lib: BOOT-INF/lib
+`), 0644)).To(Succeed())
+
+            ctx.Buildpack.API = "0.7"
+            ctx.Buildpack.Metadata = map[string]interface{}{
+                "dependencies": []map[string]interface{}{
+
+                    {
+                        "id":      "spring-cloud-bindings",
+                        "version": "1.1.0",
+                        "stacks":  []interface{}{"test-stack-id"},
+                        "cpes":    []string{"cpe:2.3:a:vmware:spring_cloud_bindings:1.8.0:*:*:*:*:*:*:*"},
+                        "purl":    "pkg:generic/springframework/spring-cloud-bindings@1.8.0",
+                    },
+                },
+            }
+
+            result, err := build.Build(ctx)
+            Expect(err).NotTo(HaveOccurred())
+
+            Expect(result.Layers).To(HaveLen(3))
+            Expect(result.Layers[0].Name()).To(Equal("helper"))
+            Expect(result.Layers[0].(libpak.HelperLayerContributor).Names).To(Equal([]string{"spring-cloud-bindings"}))
+            Expect(result.Layers[1].Name()).To(Equal("spring-cloud-bindings"))
+            Expect(result.Layers[2].Name()).To(Equal("web-application-type"))
+
+            Expect(result.BOM.Entries).To(HaveLen(3))
+            Expect(result.BOM.Entries[0].Name).To(Equal("dependencies"))
+            Expect(result.BOM.Entries[1].Name).To(Equal("helper"))
+            Expect(result.BOM.Entries[1].Launch).To(BeTrue())
+            Expect(result.BOM.Entries[1].Build).To(BeFalse())
+            Expect(result.BOM.Entries[2].Name).To(Equal("spring-cloud-bindings"))
+            Expect(result.BOM.Entries[2].Launch).To(BeTrue())
+            Expect(result.BOM.Entries[2].Build).To(BeFalse())
+        })
+
+	})
 	context("set BP_SPRING_CLOUD_BINDINGS_DISABLED to true", func() {
 		it.Before(func() {
 			Expect(os.Setenv("BP_SPRING_CLOUD_BINDINGS_DISABLED", "true")).To(Succeed())

@@ -141,20 +141,35 @@ func (b Build) Build(context libcnb.BuildContext) (libcnb.BuildResult, error) {
 	} else {
 		// contribute Spring Cloud Bindings - false by default
 		if !cr.ResolveBool("BP_SPRING_CLOUD_BINDINGS_DISABLED") {
-			h, be := libpak.NewHelperLayer(context.Buildpack, "spring-cloud-bindings")
-			h.Logger = b.Logger
-			result.Layers = append(result.Layers, h)
-			result.BOM.Entries = append(result.BOM.Entries, be)
 
-			dep, err := dr.Resolve("spring-cloud-bindings", "")
-			if err != nil {
-				return libcnb.BuildResult{}, fmt.Errorf("unable to find dependency\n%w", err)
+            var found = false
+		    for _, s := range d {
+
+            	if (s.Name=="spring-cloud-bindings") {
+            	    found = true
+            	    break
+            	}
+            }
+
+            // if spring-cloud-bindings not found, add
+		    if !found {
+                h, be := libpak.NewHelperLayer(context.Buildpack, "spring-cloud-bindings")
+                h.Logger = b.Logger
+                result.Layers = append(result.Layers, h)
+                result.BOM.Entries = append(result.BOM.Entries, be)
+
+                dep, err := dr.Resolve("spring-cloud-bindings", "")
+
+                if err != nil {
+                    return libcnb.BuildResult{}, fmt.Errorf("unable to find dependency\n%w", err)
+                }
+
+                bindingsLayer, be := NewSpringCloudBindings(filepath.Join(context.Application.Path, lib), dep, dc)
+                bindingsLayer.Logger = b.Logger
+                result.Layers = append(result.Layers, bindingsLayer)
+                result.BOM.Entries = append(result.BOM.Entries, be)
 			}
 
-			bindingsLayer, be := NewSpringCloudBindings(filepath.Join(context.Application.Path, lib), dep, dc)
-			bindingsLayer.Logger = b.Logger
-			result.Layers = append(result.Layers, bindingsLayer)
-			result.BOM.Entries = append(result.BOM.Entries, be)
 		}
 
 		// configure JVM for application type
